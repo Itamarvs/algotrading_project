@@ -16,11 +16,11 @@ def sharpe(vector):
 
 def pfe(vector):
     count = len(vector)
-    top = ((vector(1) - vector(count)) ** 2 + (count - 1) ** 2) ** 0.5
+    top = ((vector[0] - vector[count - 1]) ** 2 + (count - 1) ** 2) ** 0.5
     bottom = 0
     for i in range(count - 1):
-        bottom = bottom + (((vector.i - vector(i + 1)) ** 2 + 1) ** 0.5)
-    if vector(1) > vector(count):
+        bottom = bottom + (((vector[i] - vector[i + 1]) ** 2 + 1) ** 0.5)
+    if vector[0] > vector[count - 1]:
         top = -1 * top
     pfe_res = top / bottom
     return pfe_res
