@@ -69,12 +69,10 @@ def add_model_features(data,
     add_rolling_price_feature(data, rolling_price_lbw)
 
 
-def calc_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
+def calc_open_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
     positions = []
     for i in data.index:
-        # data.at[i, 'position'] = 0
-        position = 0
-        # calc enter position
+        open_position = 0
         if np.isfinite(data.at[i, 'volume_trigger_holds']) and int(data.at[i, 'volume_trigger_holds']) == 1:
             if data.loc[i, 'close_vs_rolling_price'] >= close_rolling_price_diff_factor:  # close above rolling price
                 j = i
@@ -84,7 +82,7 @@ def calc_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
                         high_sso_since_vol_trigger = False
                     j = j - 1
                 if high_sso_since_vol_trigger:
-                    position = 1
+                    open_position = 1
             else:  # close under rolling price
                 j = i
                 low_sso_since_vol_trigger = True
@@ -93,6 +91,19 @@ def calc_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
                         low_sso_since_vol_trigger = False
                     j = j - 1
                 if low_sso_since_vol_trigger:
+                    open_position = -1
+        data.loc[i, 'open_position'] = open_position
+
+
+def calc_positions(data, SSO_boundaries=0.2):
+    for i in data.index:
+        position = 0
+        if i > 0:
+            if int(data.at[i-1, 'open_position']) == 1:
+                if data.loc[i, 'smooth_SSO'] < 1 - SSO_boundaries:
+                    position = 1
+            if int(data.at[i - 1, 'open_position']) == -1:
+                if data.loc[i, 'smooth_SSO'] > SSO_boundaries:
                     position = -1
         data.loc[i, 'position'] = position
 
@@ -102,6 +113,7 @@ data = yf.download(["AMZN"], period="20y", interval="1d")
 data = data.reset_index()
 
 add_model_features(data)
+calc_open_positions(data)
 calc_positions(data)
 
 # print(data.groupby(['position']).count())
