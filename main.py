@@ -223,7 +223,9 @@ def calc_sharpe(data):
 # data = yf.download(["AMZN", "AAPL", "GOOG"], period="20y", interval="1d")
 # data = yf.download(["APYX"], period="20y", interval="1d")
 # data = yf.download(["APYX"], period="20y", interval="1d")
-tickers = ["APYX", "PCG", "ICL"]
+# tickers = ["APYX", "PCG", "ICL"]
+# tickers = ["AACI", "AAIC", "AAME"]
+tickers = pd.read_csv("./micro_tickers")['0']
 for ticker in tickers:#get_sp500_tickers():
     print(f"start processing {ticker}...")
     data = yf.Ticker(ticker).history(period="60d", interval="15m")
