@@ -1,15 +1,15 @@
 def sharpe(vector):
-    sum = 0
+    sum_diff = 0
     sumSq = 0
     count = len(vector) - 1
 
-    for i in range(count):
-        diff = vector(i) - vector(i - 1)
-        sum = sum + diff
+    for i in range(2, count):
+        diff = vector[i] - vector[i - 1]
+        sum_diff = sum_diff + diff
         sumSq = sumSq + (diff * diff)
 
-    numer = 16 * sum / count
-    denom = (((count * sumSq) - (sum * sum)) / (count * (count - 1))) ** 0.5
+    numer = 16 * sum_diff / count
+    denom = (((count * sumSq) - (sum_diff * sum_diff)) / (count * (count - 1))) ** 0.5
     sharpe_res = numer / denom
     return sharpe_res
 
