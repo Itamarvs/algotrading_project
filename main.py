@@ -24,9 +24,9 @@ def add_SSO(data, lbw=14, smoothing_factor=3):
     # Adds an "n_low" column with min value of previous lbw periods
     data[lbw_low] = data['Low'].rolling(lbw).min()
     # Uses the min/max values to calculate the SSO (as a percentage)
-    data[f'SSO_{lbw}'] = (data['Close'] - data[lbw_low]) / (data[lbw_high] - data[lbw_low])
+    data[f'SSO'] = (data['Close'] - data[lbw_low]) / (data[lbw_high] - data[lbw_low])
     # Uses the SSO to calculates a SMA over the past smoothing_factor values of SSO
-    data['smooth_SSO'] = data[f'SSO_{lbw}'].rolling(smoothing_factor).mean()
+    data['smooth_SSO'] = data[f'SSO'].rolling(smoothing_factor).mean()
 
 
 def add_pfe(data, pfe_lbw=10):
@@ -44,8 +44,8 @@ def add_pfe(data, pfe_lbw=10):
         if diff < 0:
             pfe_res = -pfe_res
         pfe_values.append(pfe_res)
-    data[f'PFE_{pfe_lbw}'] = pfe_values
-    data[f'PFE_{pfe_lbw}'] = data[f'PFE_{pfe_lbw}'].ewm(span=5, adjust=False).mean()
+    data[f'PFE'] = pfe_values
+    data[f'PFE'] = data[f'PFE'].ewm(span=5, adjust=False).mean()
 
 
 def add_volume_vs_lbw_volume_mean(data, lbw):
@@ -119,7 +119,7 @@ def calc_naive_momentum_SSO(data, SSO_boundaries=0.2):
             pl='naive_momentum_pl', pl_acc='naive_momentum_pl_accumulate')
 
 
-def calc_open_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
+def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
     data.loc[0, 'open_position'] = 0
     for i in data.index:
         open_position = 0
@@ -147,6 +147,37 @@ def calc_open_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=
                 if low_sso_since_vol_trigger:
                     open_position = -1
         data.loc[i + 1, 'open_position'] = open_position
+
+
+def calc_open_positions_PFE(data, close_rolling_price_diff_factor=1, pfe_boundaries=0.4):
+    data.loc[0, 'open_position'] = 0
+    for i in data.index:
+        open_position = 0
+        if np.isfinite(data.at[i, 'volume_trigger_holds']) and int(data.at[i, 'volume_trigger_holds']) == 1:
+            if data.loc[i, 'close_vs_rolling_price'] >= close_rolling_price_diff_factor:  # close above rolling price
+                j = i
+                high_sso_since_vol_trigger = True
+                while j >= 0 and high_sso_since_vol_trigger and int(data.loc[j, 'volume_trigger_holds']) == 1:
+                    if data.loc[j, 'PFE'] < 1 - pfe_boundaries:
+                        high_sso_since_vol_trigger = False
+                    if int(data.loc[j, 'volume_trigger']) == 1:
+                        break
+                    j = j - 1
+                if high_sso_since_vol_trigger:
+                    open_position = 1
+            else:  # close under rolling price
+                j = i
+                low_sso_since_vol_trigger = True
+                while j >= 0 and low_sso_since_vol_trigger and int(data.loc[j, 'volume_trigger_holds']) == 1:
+                    if data.loc[j, 'smooth_SSO'] > -1 + pfe_boundaries:
+                        low_sso_since_vol_trigger = False
+                    if int(data.loc[j, 'volume_trigger']) == 1:
+                        break
+                    j = j - 1
+                if low_sso_since_vol_trigger:
+                    open_position = -1
+        data.loc[i + 1, 'open_position'] = open_position
+
 
 
 def calc_positions(data, SSO_boundaries=0.2):
@@ -200,7 +231,8 @@ for ticker in tickers:#get_sp500_tickers():
 
     add_model_features(data)
     # calc_naive_momentum_SSO(data)
-    calc_open_positions(data)
+    calc_open_positions_SSO(data)
+    # calc_open_positions_PFE(data)
     calc_positions(data)
     calc_pl(data, transaction_cost=0.005, order_quantity=1)
     sharpe_res = round(calc_sharpe(data), 2)
