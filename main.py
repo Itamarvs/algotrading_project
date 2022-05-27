@@ -53,14 +53,13 @@ def add_volume_trigger_holds(data, volume_trigger_duration):
     data['volume_trigger_holds'] = data['volume_trigger'].rolling(volume_trigger_duration).max()
 
 
-
 def add_model_features(data,
                        SSO_lbw=14,
                        SSO_smoothing_factor=3,
                        SSO_th=0.5,
-                       volume_trigger_lbw=20,
-                       volume_trigger_factor=1.5,
-                       volume_trigger_duration=5,
+                       volume_trigger_lbw=28,
+                       volume_trigger_factor=1.75,
+                       volume_trigger_duration=10,
                        rolling_price_lbw=14):
     add_volume_vs_lbw_volume_mean_feature(data, volume_trigger_lbw)
     add_volume_trigger(data, volume_trigger_factor)
@@ -70,7 +69,7 @@ def add_model_features(data,
 
 
 def calc_open_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
-    positions = []
+    data.loc[0, 'open_position'] = 0
     for i in data.index:
         open_position = 0
         if np.isfinite(data.at[i, 'volume_trigger_holds']) and int(data.at[i, 'volume_trigger_holds']) == 1:
@@ -80,6 +79,8 @@ def calc_open_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=
                 while j >= 0 and high_sso_since_vol_trigger and int(data.loc[j, 'volume_trigger_holds']) == 1:
                     if data.loc[j, 'smooth_SSO'] < 1 - SSO_boundaries:
                         high_sso_since_vol_trigger = False
+                    if int(data.loc[j, 'volume_trigger']) == 1:
+                        break
                     j = j - 1
                 if high_sso_since_vol_trigger:
                     open_position = 1
@@ -89,54 +90,73 @@ def calc_open_positions(data, close_rolling_price_diff_factor=1, SSO_boundaries=
                 while j >= 0 and low_sso_since_vol_trigger and int(data.loc[j, 'volume_trigger_holds']) == 1:
                     if data.loc[j, 'smooth_SSO'] > SSO_boundaries:
                         low_sso_since_vol_trigger = False
+                    if int(data.loc[j, 'volume_trigger']) == 1:
+                        break
                     j = j - 1
                 if low_sso_since_vol_trigger:
                     open_position = -1
-        data.loc[i, 'open_position'] = open_position
+        data.loc[i + 1, 'open_position'] = open_position
 
 
 def calc_positions(data, SSO_boundaries=0.2):
+    data.loc[0, 'position'] = 0
     for i in data.index:
-        position = 0
         if i > 0:
-            if int(data.at[i-1, 'open_position']) == 1:
+            position = np.sign(data.loc[i - 1, 'position'] + data.loc[i, 'open_position'])
+            if position == 1:
                 if data.loc[i, 'smooth_SSO'] < 1 - SSO_boundaries:
-                    position = 1
-            if int(data.at[i - 1, 'open_position']) == -1:
+                    position = 0
+            if position == -1:
                 if data.loc[i, 'smooth_SSO'] > SSO_boundaries:
-                    position = -1
-        data.loc[i, 'position'] = position
+                    position = 0
+            data.loc[i, 'position'] = position
+
+
+def calc_pl(data, transaction_cost=1, unit_move=1, order_quantity=1):
+    data['prev_position'] = data['position'].shift()
+    data['prev_close'] = data['Close'].shift()
+    data['pl'] = data.apply(lambda row: calc_row_pl(row, transaction_cost, unit_move, order_quantity),
+                            axis=1)
+    data['pl_accumulate'] = data['pl'].cumsum()
+
+
+def calc_row_pl(row, transaction_cost, unit_move, order_quantity):
+    if abs(row.position) == 1 and row.prev_position == 0:
+        return (row.Close - row.Open) * unit_move * row.position - abs(order_quantity * transaction_cost)
+    elif row.position == 0 and abs(row.prev_position) == 1:
+        return (row.Open - row.prev_close) * unit_move * row.prev_position - abs(order_quantity * transaction_cost)
+    elif abs(row.position) == 1 and abs(row.prev_position) == 1 and np.sign(row.position) != np.sign(row.prev_position):
+        return (row.Close - row.Open) * unit_move * row.position - abs(order_quantity * transaction_cost) \
+            + (row.Open - row.prev_close) * unit_move * row.prev_position - abs(order_quantity * transaction_cost)
+    else:
+        return (row.Close - row.prev_close) * unit_move * row.position
+
+
 
 
 # data = yf.download(["AMZN", "AAPL", "GOOG"], period="20y", interval="1d")
-data = yf.download(["AMZN"], period="20y", interval="1d")
-data = data.reset_index()
+# data = yf.download(["APYX"], period="20y", interval="1d")
+# data = yf.download(["APYX"], period="20y", interval="1d")
+tickers = ["BTC-USD", "APYX", "AMZN", "PCG", "WIX"]
+# ticker = "BTC-USD"
+for ticker in tickers:
+    data = yf.Ticker(ticker).history(period="20y", interval="1d")
+    data = data.reset_index()
 
-add_model_features(data)
-calc_open_positions(data)
-calc_positions(data)
+    add_model_features(data)
+    calc_open_positions(data)
+    calc_positions(data)
+    calc_pl(data, transaction_cost=0)
+
+    plt.plot(data['pl_accumulate'])
+    plt.plot(data['Close'])
+    plt.title(ticker)
+    plt.show()
+    data.to_csv("./results.csv")
 
 # print(data.groupby(['position']).count())
 # print(data.loc[data['position'] == -1])
+# print(data.columns)
+# print(data)
 
-data.to_csv("./results.csv")
-
-
-
-
-# prices = []
-# momentum_k = []
-# momentum_d = []
-# volume_triggers = []
-# rand_day = random.randint(11, len(dates))
-# for date in dates[rand_day : rand_day + 100]:
-#     prices.append(data['Close'][date])
-#     momentum_k.append(data['STOCHk_14_3_3'][date])
-#     momentum_d.append(data['STOCHd_14_3_3'][date])
-#     # volume_triggers.append(volume_trigger(date))
 #
-# plt.plot(prices)
-# plt.show()
-# plt.plot(momentum_k, 'r+')
-# plt.plot(momentum_d, 'b+')
-# plt.show()
