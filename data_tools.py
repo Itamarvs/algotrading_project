@@ -15,7 +15,7 @@ def get_sp500_tickers():
     return symbols
 
 
-# def micro_tickers(tickers):
+# def micro_tickers_between_1_10(tickers):
 #     micros = []
 #     for ticker in tickers:
 #         quote = data.get_quote_yahoo(ticker)
@@ -42,11 +42,11 @@ def between_1_10(tickers):
 # tickers = list(get_sp500_tickers())
 # # tickers = ["WIX", "APYX"]
 # print(tickers)
-# tickers = micro_tickers(tickers)
+# tickers = micro_tickers_between_1_10(tickers)
 # print(tickers)
 
 # print(nasdaq_stocks.columns)
 # micro_size = nasdaq_stocks['Market Cap'].between(50000000,300000000)
-# micro_tickers = list(nasdaq_stocks[micro_size]['Symbol'].values)
-# micro_tickers_between_1_10 = between_1_10(micro_tickers)
-# pd.DataFrame(micro_tickers_between_1_10).to_csv("./micro_tickers")
+# micro_tickers_between_1_10 = list(nasdaq_stocks[micro_size]['Symbol'].values)
+# micro_tickers_between_1_10 = between_1_10(micro_tickers_between_1_10)
+# pd.DataFrame(micro_tickers_between_1_10).to_csv("./micro_tickers_between_1_10")
