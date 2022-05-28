@@ -10,6 +10,7 @@ def sharpe(vector):
 
     numer = 16 * sum_diff / count
     denom = (((count * sumSq) - (sum_diff * sum_diff)) / (count * (count - 1))) ** 0.5
+    print(denom, numer)
     sharpe_res = numer / denom
     return sharpe_res
 

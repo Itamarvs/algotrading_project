@@ -39,14 +39,9 @@ def between_1_10(tickers):
     return between_1_10
 
 
-# tickers = list(get_sp500_tickers())
-# # tickers = ["WIX", "APYX"]
-# print(tickers)
-# tickers = micro_tickers_between_1_10(tickers)
-# print(tickers)
-
-# print(nasdaq_stocks.columns)
-# micro_size = nasdaq_stocks['Market Cap'].between(50000000,300000000)
-# micro_tickers_between_1_10 = list(nasdaq_stocks[micro_size]['Symbol'].values)
-# micro_tickers_between_1_10 = between_1_10(micro_tickers_between_1_10)
-# pd.DataFrame(micro_tickers_between_1_10).to_csv("./micro_tickers_between_1_10")
+def save_micro_tickers_between_1_10():
+    print(nasdaq_stocks.columns)
+    micro_size = nasdaq_stocks['Market Cap'].between(50000000,300000000)
+    micro_tickers_between_1_10 = list(nasdaq_stocks[micro_size]['Symbol'].values)
+    micro_tickers_between_1_10 = between_1_10(micro_tickers_between_1_10)
+    pd.DataFrame(micro_tickers_between_1_10).to_csv("./micro_tickers_between_1_10")

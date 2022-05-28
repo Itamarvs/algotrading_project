@@ -226,7 +226,7 @@ def calc_sharpe(data):
 # tickers = ["APYX", "PCG", "ICL"]
 # tickers = ["AACI", "AAIC", "AAME"]
 tickers = pd.read_csv("micro_tickers_between_1_10")['0']
-for ticker in tickers:#get_sp500_tickers():
+for ticker in tickers[:3]:
     print(f"start processing {ticker}...")
     data = yf.Ticker(ticker).history(period="60d", interval="15m")
     data = data.reset_index()
@@ -252,4 +252,3 @@ for ticker in tickers:#get_sp500_tickers():
 # print(data.columns)
 # print(data)
 
-#
