@@ -1,3 +1,6 @@
+import math
+
+
 def sharpe(vector):
     sum_diff = 0
     sumSq = 0
@@ -10,8 +13,10 @@ def sharpe(vector):
 
     numer = 16 * sum_diff / count
     denom = (((count * sumSq) - (sum_diff * sum_diff)) / (count * (count - 1))) ** 0.5
-    print(denom, numer)
-    sharpe_res = numer / denom
+    if denom == 0:
+        sharpe_res = math.nan
+    else:
+        sharpe_res = numer / denom
     return sharpe_res
 
 

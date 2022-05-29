@@ -8,6 +8,8 @@ import pandas_ta as ta
 import numpy as np
 import matplotlib.pyplot as plt
 from pandas import DataFrame
+import itertools
+
 
 from data_tools import get_sp500_tickers
 from finance_tools import pfe, sharpe
@@ -84,7 +86,6 @@ def add_ATR(data, atr_lbw):
 def add_model_features(data,
                        SSO_lbw=14,
                        SSO_smoothing_factor=3,
-                       SSO_th=0.5,
                        volume_trigger_lbw=28,
                        volume_trigger_factor=1.75,
                        volume_trigger_duration=10,
@@ -94,7 +95,7 @@ def add_model_features(data,
     add_volume_trigger(data, volume_trigger_factor)
     add_volume_trigger_holds(data, volume_trigger_duration)
     add_SSO(data, SSO_lbw, SSO_smoothing_factor)
-    add_pfe(data, SSO_lbw)
+    # add_pfe(data, SSO_lbw)
     add_rolling_price_feature(data, rolling_price_lbw)
     add_ATR(data, atr_lbw)
 
@@ -127,7 +128,7 @@ def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundar
             if data.loc[i, 'close_vs_rolling_price'] >= close_rolling_price_diff_factor:  # close above rolling price
                 j = i
                 high_sso_since_vol_trigger = True
-                while j >= 0 and high_sso_since_vol_trigger and int(data.loc[j, 'volume_trigger_holds']) == 1:
+                while j >= 0 and high_sso_since_vol_trigger and data.loc[j, 'volume_trigger_holds'] == 1:
                     if data.loc[j, 'smooth_SSO'] < 1 - SSO_boundaries:
                         high_sso_since_vol_trigger = False
                     if int(data.loc[j, 'volume_trigger']) == 1:
@@ -138,7 +139,7 @@ def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundar
             else:  # close under rolling price
                 j = i
                 low_sso_since_vol_trigger = True
-                while j >= 0 and low_sso_since_vol_trigger and int(data.loc[j, 'volume_trigger_holds']) == 1:
+                while j >= 0 and low_sso_since_vol_trigger and data.loc[j, 'volume_trigger_holds'] == 1:
                     if data.loc[j, 'smooth_SSO'] > SSO_boundaries:
                         low_sso_since_vol_trigger = False
                     if int(data.loc[j, 'volume_trigger']) == 1:
@@ -198,7 +199,8 @@ def calc_pl(data, transaction_cost=1, order_quantity=1,
             prev_position_column='prev_position', position_column='position', pl='pl', pl_acc='pl_accumulate'):
     data[prev_position_column] = data[position_column].shift()
     data['prev_close'] = data['Close'].shift()
-    data[pl] = data.apply(lambda row: calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, position_column),
+    data[pl] = data.apply(lambda row:
+                          calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, position_column),
                           axis=1)
     data[pl_acc] = data[pl].cumsum()
 
@@ -217,38 +219,71 @@ def calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, pos
 
 def calc_sharpe(data):
     sharpe_res = sharpe(data['pl_accumulate'])
-    print("sharpe ratio: ", sharpe_res)
+    # print("sharpe ratio: ", sharpe_res)
     return sharpe_res
 
 # data = yf.download(["AMZN", "AAPL", "GOOG"], period="20y", interval="1d")
-# data = yf.download(["APYX"], period="20y", interval="1d")
-# data = yf.download(["APYX"], period="20y", interval="1d")
-# tickers = ["APYX", "PCG", "ICL"]
-# tickers = ["AACI", "AAIC", "AAME"]
-tickers = pd.read_csv("micro_tickers_between_1_10")['0']
-for ticker in tickers[:3]:
-    print(f"start processing {ticker}...")
-    data = yf.Ticker(ticker).history(period="60d", interval="15m")
-    data = data.reset_index()
 
-    add_model_features(data)
-    # calc_naive_momentum_SSO(data)
-    calc_open_positions_SSO(data)
-    # calc_open_positions_PFE(data)
-    calc_positions(data)
-    calc_pl(data, transaction_cost=0.005, order_quantity=1)
-    sharpe_res = round(calc_sharpe(data), 2)
 
+def run_model(tickers, momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration, transaction_cost=0.005, order_quantity=1):
+    sharpes = []
+    for ticker in tickers:
+        # print(f"start processing {ticker}...")
+        data = yf.Ticker(ticker).history(period="60d", interval="15m")
+        data = data.reset_index()
+
+        add_model_features(data,
+                           SSO_lbw=momentum_lbw,
+                           volume_trigger_lbw=volume_trigger_lbw,
+                           volume_trigger_duration=volume_trigger_duration)
+        # calc_naive_momentum_SSO(data)
+        calc_open_positions_SSO(data,
+                                SSO_boundaries=momentum_th)
+        # calc_open_positions_PFE(data)
+        calc_positions(data)
+        calc_pl(data, transaction_cost=transaction_cost, order_quantity=order_quantity)
+        sharpe_res = round(calc_sharpe(data), 2)
+        sharpes.append(sharpe_res)
+        # plot_ticker_results(data, sharpe_res, ticker)
+        data.to_csv(f"./{ticker}_results.csv")
+    return np.mean(sharpes), np.std(sharpes)
+
+
+def plot_ticker_results(data, sharpe_res, ticker):
     plt.plot(data['pl_accumulate'], label=f"model P&L, sharpe = {sharpe_res}")
     # plt.plot(data['naive_momentum_pl_accumulate'], label="naive momentum accumulated P&L")
     plt.plot(data['Close'] - data.at[0, 'Close'], label="Stock price")
     plt.title(ticker)
     plt.legend(loc='upper left')
     plt.show()
-    data.to_csv("./results.csv")
 
-# print(data.groupby(['position']).count())
-# print(data.loc[data['position'] == -1])
-# print(data.columns)
-# print(data)
 
+tickers = pd.read_csv("micro_tickers_between_1_10")['0']
+example_tickers = tickers[:5]
+
+# momentum_lbws = range(3, 50, 2)
+momentum_lbws = [3, 7, 20, 50]
+# momentum_ths = np.arange(0.1, 0.5, 0.05)
+momentum_ths = np.arange(0.1, 0.5, 0.15)
+# volume_trigger_lbws = range(3, 50, 2)
+volume_trigger_lbws = [5, 10, 25, 50]
+# volume_trigger_durations = range(3, 50, 5)
+volume_trigger_durations = [5, 25, 50, 80]
+
+total_results = pd.DataFrame(columns=['momentum_lbw', 'momentum_th', 'volume_trigger_lbw', 'volume_trigger_duration', 'sharpe', 'sharpe_std'])
+for (momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration) in itertools.product(momentum_lbws, momentum_ths, volume_trigger_lbws, volume_trigger_durations):
+    print(f"momentum_lbw: {momentum_lbw}, momentum_th: {momentum_th}, volume_trigger_lbw: {volume_trigger_lbw}, volume_trigger_duration: {volume_trigger_duration}")
+    (params_sharpe, params_sharpe_std) = run_model(example_tickers, momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration, 0)
+    print(f"sharpe = {round(params_sharpe, 3)}, std = {round(params_sharpe_std, 3)}")
+    results_data = {
+        'momentum_lbw': momentum_lbw,
+        'momentum_th': momentum_th,
+        'volume_trigger_lbw': volume_trigger_lbw,
+        'volume_trigger_duration': volume_trigger_duration,
+        'sharpe': params_sharpe,
+        'sharpe_std': params_sharpe_std
+    }
+    results = pd.Series(results_data)
+    total_results.loc[f'{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}'] = results
+
+total_results.to_csv("./optimization_results_0.csv")
