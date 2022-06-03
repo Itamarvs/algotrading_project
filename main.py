@@ -13,6 +13,7 @@ import itertools
 
 from data_tools import get_sp500_tickers
 from finance_tools import pfe, sharpe
+from learning_model import label_data, label_data_with_lfw
 
 
 def add_SSO(data, lbw=14, smoothing_factor=3):
@@ -222,16 +223,22 @@ def calc_sharpe(data):
     # print("sharpe ratio: ", sharpe_res)
     return sharpe_res
 
-# data = yf.download(["AMZN", "AAPL", "GOOG"], period="20y", interval="1d")
+
+def scale_prices(data):
+    mean = data['Close'].mean()
+    data['scaled_open'] = data['Open'] / mean
+    data['scaled_close'] = data['Close'] / mean
+    data['returns'] = data['Close'].pct_change()
 
 
-def run_model(tickers, momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration, transaction_cost=0.005, order_quantity=1):
+def run_model(tickers, momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration, transaction_cost=0.000, order_quantity=1):
     sharpes = []
+    pls = []
     for ticker in tickers:
         # print(f"start processing {ticker}...")
         data = yf.Ticker(ticker).history(period="60d", interval="15m")
         data = data.reset_index()
-
+        # scale_prices(data)
         add_model_features(data,
                            SSO_lbw=momentum_lbw,
                            volume_trigger_lbw=volume_trigger_lbw,
@@ -268,7 +275,8 @@ momentum_ths = np.arange(0.1, 0.5, 0.15)
 # volume_trigger_lbws = range(3, 50, 2)
 volume_trigger_lbws = [5, 10, 25, 50]
 # volume_trigger_durations = range(3, 50, 5)
-volume_trigger_durations = [5, 25, 50, 80]
+volume_trigger_durations = range(1, 15, 5)
+
 
 total_results = pd.DataFrame(columns=['momentum_lbw', 'momentum_th', 'volume_trigger_lbw', 'volume_trigger_duration', 'sharpe', 'sharpe_std'])
 for (momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration) in itertools.product(momentum_lbws, momentum_ths, volume_trigger_lbws, volume_trigger_durations):
@@ -287,3 +295,23 @@ for (momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration) in 
     total_results.loc[f'{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}'] = results
 
 total_results.to_csv("./optimization_results_0.csv")
+
+
+
+
+
+# for ticker in list(get_sp500_tickers())[:30]:
+# for ticker in example_tickers:
+#     data = yf.Ticker(ticker).history(period="60d", interval="15m")
+#     # print(data.columns)
+#     scale_prices(data)
+#     # label_data(data)
+#     label_data_with_lfw(data, 5, 1)
+#     # data.to_csv("./with_labels_3.csv")
+#     # plt.plot(data['Close'], label=f"{ticker} close")
+#     # plt.plot(data['naive_momentum_pl_accumulate'], label="naive momentum accumulated P&L")
+#     # plt.plot(data['scaled_close'], label=f"{ticker} scaled close")
+
+# plt.legend(loc='upper left')
+# plt.show()
+#
