@@ -1,3 +1,4 @@
+import math
 import random
 from datetime import datetime, timedelta
 from typing import Union, Any
@@ -7,13 +8,16 @@ import pandas as pd
 import pandas_ta as ta
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
+from numpy import ndarray
 from pandas import DataFrame
 import itertools
 
-
+import data_tools
 from data_tools import get_sp500_tickers
-from finance_tools import pfe, sharpe
+from finance_tools import pfe, sharpe, sharpe_ratio
 from learning_model import label_data, label_data_with_lfw
+from sklearn.model_selection import train_test_split
 
 
 def add_SSO(data, lbw=14, smoothing_factor=3):
@@ -41,7 +45,7 @@ def add_pfe(data, pfe_lbw=10):
         diff = data['Close'][i] - data['Close'][i - pfe_period]
         top = (diff ** 2 + pfe_period ** 2) ** 0.5
         bottom = 0
-        for j in range(0, pfe_period-1):
+        for j in range(0, pfe_period - 1):
             bottom += (1 + (data['Close'][i - j] - data['Close'][i - j - 1]) ** 2) ** 0.5
         pfe_res = top / bottom
         if diff < 0:
@@ -101,7 +105,7 @@ def add_model_features(data,
     add_ATR(data, atr_lbw)
 
 
-def calc_naive_momentum_SSO(data, SSO_boundaries=0.2):
+def naive_momentum(data, SSO_boundaries, transaction_cost, order_quantity):
     data.loc[0, 'naive_momentum_open_position'] = 0
     for i in data.index:
         open_position = 0
@@ -117,8 +121,14 @@ def calc_naive_momentum_SSO(data, SSO_boundaries=0.2):
             position = np.sign(data.loc[i - 1, 'naive_momentum_position'] + data.loc[i, 'naive_momentum_open_position'])
             data.loc[i, 'naive_momentum_position'] = position
 
-    calc_pl(data, prev_position_column='naive_momentum_prev_position', position_column='naive_momentum_position',
-            pl='naive_momentum_pl', pl_acc='naive_momentum_pl_accumulate')
+    calc_enter_position_price(data, 'naive_enter_position_price', 'naive_momentum_position')
+
+    calc_pl_returns(data, prev_position_column='naive_momentum_prev_position',
+                    position_column='naive_momentum_position',
+                    pl='naive_momentum_pl', pl_acc='naive_momentum_pl_accumulate',
+                    returns='naive_momentum_returns', returns_acc='naive_momentum_returns_accumulate',
+                    enter_position_price='naive_enter_position_price',
+                    transaction_cost=transaction_cost, order_quantity=order_quantity)
 
 
 def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundaries=0.2):
@@ -181,7 +191,6 @@ def calc_open_positions_PFE(data, close_rolling_price_diff_factor=1, pfe_boundar
         data.loc[i + 1, 'open_position'] = open_position
 
 
-
 def calc_positions(data, SSO_boundaries=0.2):
     data.loc[0, 'position'] = 0
     for i in data.index:
@@ -196,30 +205,41 @@ def calc_positions(data, SSO_boundaries=0.2):
             data.loc[i, 'position'] = position
 
 
-def calc_pl(data, transaction_cost=1, order_quantity=1,
-            prev_position_column='prev_position', position_column='position', pl='pl', pl_acc='pl_accumulate'):
+def calc_pl_returns(data, transaction_cost=0.005, order_quantity=1,
+                    prev_position_column='prev_position', position_column='position',
+                    pl='pl', pl_acc='pl_accumulate',
+                    returns='returns', returns_acc='returns_accumulate',
+                    enter_position_price='enter_position_price'):
     data[prev_position_column] = data[position_column].shift()
     data['prev_close'] = data['Close'].shift()
     data[pl] = data.apply(lambda row:
                           calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, position_column),
                           axis=1)
     data[pl_acc] = data[pl].cumsum()
+    data.loc[data[enter_position_price] == 0, returns] = 0
+    data.loc[data[enter_position_price] != 0, returns] = data[pl] / data[enter_position_price]
+    data[returns_acc] = data[returns].dropna().cumsum()
 
 
 def calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, position_column):
-    if abs(row[position_column]) == 1 and row[prev_position_column] == 0:
-        return (row.Close - row.Open) * order_quantity * row[position_column] - abs(order_quantity * transaction_cost * row.Open)
+    if math.isnan(row.prev_close) or math.isnan(row.Close):
+        return 0
+    elif abs(row[position_column]) == 1 and row[prev_position_column] == 0:
+        return (row.Close - row.Open) * order_quantity * row[position_column] - abs(transaction_cost)
     elif row[position_column] == 0 and abs(row[prev_position_column]) == 1:
-        return (row.Open - row.prev_close) * order_quantity * row[prev_position_column] - abs(order_quantity * transaction_cost * row.Open)
-    elif abs(row[position_column]) == 1 and abs(row[prev_position_column]) == 1 and np.sign(row[position_column]) != np.sign(row[prev_position_column]):
-        return (row.Close - row.Open) * order_quantity * row[position_column] - abs(order_quantity * transaction_cost * row.Open) \
-            + (row.Open - row.prev_close) * order_quantity * row[prev_position_column] - abs(order_quantity * transaction_cost * row.Open)
+        return (row.Open - row.prev_close) * order_quantity * row[prev_position_column] - abs(transaction_cost)
+    elif abs(row[position_column]) == 1 and abs(row[prev_position_column]) == 1 and np.sign(
+            row[position_column]) != np.sign(row[prev_position_column]):
+        return (row.Close - row.Open) * order_quantity * row[position_column] - abs(transaction_cost) \
+               + (row.Open - row.prev_close) * order_quantity * row[prev_position_column] - abs(transaction_cost)
     else:
         return (row.Close - row.prev_close) * order_quantity * row[position_column]
 
 
-def calc_sharpe(data):
-    sharpe_res = sharpe(data['pl_accumulate'])
+def calc_sharpe(data, returns='returns'):
+    # sharpe_res = sharpe(data['pl_accumulate'])
+    # sharpe_res = sharpe(data['returns'])
+    sharpe_res = sharpe_ratio(data[returns].dropna())
     # print("sharpe ratio: ", sharpe_res)
     return sharpe_res
 
@@ -231,70 +251,299 @@ def scale_prices(data):
     data['returns'] = data['Close'].pct_change()
 
 
-def run_model(tickers, momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration, transaction_cost=0.000, order_quantity=1):
+def calc_enter_position_price(data,
+                              enter_position_price='enter_position_price',
+                              position='position'):
+    data.loc[0, enter_position_price] = 0
+    for i in data.index:
+        enter_position_price_val = 0
+        if i > 0:
+            if data.loc[i - 1, position] == 0 and abs(data.loc[i, position]) == 1:
+                enter_position_price_val = data.loc[i, 'Open']
+            elif data.loc[i - 1, position] == 1 and data.loc[i, position] == -1:
+                enter_position_price_val = data.loc[i, 'Open']
+            elif data.loc[i - 1, position] == -1 and data.loc[i, position] == 1:
+                enter_position_price_val = data.loc[i, 'Open']
+
+            elif data.loc[i - 1, position] == 1 and data.loc[i, position] == 1:
+                enter_position_price_val = data.loc[i - 1, enter_position_price]
+            elif data.loc[i - 1, position] == -1 and data.loc[i, position] == -1:
+                enter_position_price_val = data.loc[i - 1, enter_position_price]
+            elif abs(data.loc[i - 1, position]) == 1 and data.loc[i, position] == 0:
+                enter_position_price_val = data.loc[i - 1, enter_position_price]
+
+            elif data.loc[i - 1, position] == 0 and data.loc[i, position] == 0:
+                enter_position_price_val = 0
+
+            data.loc[i, enter_position_price] = enter_position_price_val
+
+
+def run_model(tickers,
+              momentum_lbw, momentum_th, SSO_smoothing_factor,
+              volume_trigger_lbw, volume_trigger_duration, volume_factor, rolling_price_lbw,
+              transaction_cost=0.01, order_quantity=1):
     sharpes = []
-    pls = []
+    sharpes_naive = []
+    returns = []
+    returns_naive = []
     for ticker in tickers:
-        # print(f"start processing {ticker}...")
         data = yf.Ticker(ticker).history(period="60d", interval="15m")
         data = data.reset_index()
-        # scale_prices(data)
-        add_model_features(data,
+        train, test = train_test_split(data, test_size=0.25, shuffle=False)
+
+        add_model_features(train,
                            SSO_lbw=momentum_lbw,
                            volume_trigger_lbw=volume_trigger_lbw,
-                           volume_trigger_duration=volume_trigger_duration)
-        # calc_naive_momentum_SSO(data)
-        calc_open_positions_SSO(data,
-                                SSO_boundaries=momentum_th)
-        # calc_open_positions_PFE(data)
-        calc_positions(data)
-        calc_pl(data, transaction_cost=transaction_cost, order_quantity=order_quantity)
-        sharpe_res = round(calc_sharpe(data), 2)
+                           volume_trigger_duration=volume_trigger_duration,
+                           volume_trigger_factor=volume_factor,
+                           rolling_price_lbw=rolling_price_lbw,
+                           SSO_smoothing_factor=SSO_smoothing_factor)
+
+        # naive_momentum(train, SSO_boundaries=momentum_th,
+        #                transaction_cost=transaction_cost, order_quantity=order_quantity)
+
+        calc_model(momentum_th, order_quantity, train, transaction_cost)
+
+        sharpe_res = round(calc_sharpe(train), 3)
+        # sharpe_res_naive = round(calc_sharpe(train, 'naive_momentum_returns'), 3)
+        returns_res = round(train['returns_accumulate'].dropna().iloc[-1], 3)
+        # returns_res_naive = round(train['naive_momentum_returns_accumulate'].dropna().iloc[-1], 3)
         sharpes.append(sharpe_res)
-        # plot_ticker_results(data, sharpe_res, ticker)
-        data.to_csv(f"./{ticker}_results.csv")
-    return np.mean(sharpes), np.std(sharpes)
+        # sharpes_naive.append(sharpe_res_naive)
+        returns.append(returns_res)
+        # returns_naive.append(returns_res_naive)
+
+        # plot_ticker_results(train, sharpe_res, ticker)
+
+        # train.to_csv(
+        #     f"./results/{ticker}_{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}_{volume_factor}.csv")
+
+    return np.mean(sharpes), \
+           np.std(sharpes), \
+           np.mean(returns)
+    # return np.mean(sharpes), np.mean(sharpes_naive), \
+    #        np.std(sharpes), np.std(sharpes_naive), \
+    #        np.mean(returns), np.mean(returns_naive)
+
+
+def calc_model(momentum_th, order_quantity, train, transaction_cost):
+    calc_open_positions_SSO(train, SSO_boundaries=momentum_th)
+    calc_positions(train, momentum_th)
+    calc_enter_position_price(train)
+    calc_pl_returns(train, transaction_cost=transaction_cost, order_quantity=order_quantity)
 
 
 def plot_ticker_results(data, sharpe_res, ticker):
-    plt.plot(data['pl_accumulate'], label=f"model P&L, sharpe = {sharpe_res}")
+    # plt.plot(data['pl_accumulate'], label=f"model P&L, sharpe = {sharpe_res}")
     # plt.plot(data['naive_momentum_pl_accumulate'], label="naive momentum accumulated P&L")
-    plt.plot(data['Close'] - data.at[0, 'Close'], label="Stock price")
-    plt.title(ticker)
-    plt.legend(loc='upper left')
+    data['color'] = 'None'
+    data.loc[(data['position'] == 1), 'color'] = 'green'
+    data.loc[(data['position'] == -1), 'color'] = 'red'
+
+    fig, axs = plt.subplots(2)
+    fig.supylabel(f'{ticker} - Model performance')
+    # xs = range(data.shape[0])
+    # xs = data.Datetime.values
+    xs = data.index
+
+    axs[0].plot(xs, data['Close'], color='grey', linewidth=0.7, zorder=2)
+    axs[0].scatter(xs, data['Close'],
+                   c=data['color'], s=1, zorder=1,
+                   label="Stock price")
+    axs[0].title.set_text("Stock Price & Trades")
+    # axs[0].set_ylabel("Trades")
+    axs[1].plot(xs, data['returns_accumulate'], label="Model")
+    # axs[1].plot(xs, data['naive_momentum_returns_accumulate'], label="Naive Momentum")
+    axs[1].title.set_text("Returns")
+    axs[1].legend()
+    # axs[1].set_ylabel("Returns")
+    # plt.scatter(xs, data['Close'] - data.at[0, 'Close'],
+    #             c=data['color'], s=1, zorder=1,
+    #             label="Stock price")
+    # plt.plot(data['Close'], label="Stock price")
+    # plt.plot(data['Close'] - data.at[0, 'Close'], label="Stock price",
+    #          color='grey', linewidth=0.7, zorder=2)
+    # plt.plot(data['returns_accumulate'], label="Model Returns")
+    plt.subplots_adjust(hspace=0.35)
+    # plt.legend(loc='upper left', prop={'size': 10})
     plt.show()
 
 
-tickers = pd.read_csv("micro_tickers_between_1_10")['0']
-example_tickers = tickers[:5]
-
-# momentum_lbws = range(3, 50, 2)
-momentum_lbws = [3, 7, 20, 50]
-# momentum_ths = np.arange(0.1, 0.5, 0.05)
-momentum_ths = np.arange(0.1, 0.5, 0.15)
-# volume_trigger_lbws = range(3, 50, 2)
-volume_trigger_lbws = [5, 10, 25, 50]
-# volume_trigger_durations = range(3, 50, 5)
-volume_trigger_durations = range(1, 15, 5)
+def print_curr_params():
+    print(f"momentum_lbw: {momentum_lbw},"
+          f" momentum_th: {momentum_th},"
+          f" volume_trigger_lbw: {volume_trigger_lbw},"
+          f" volume_trigger_duration: {volume_trigger_duration},"
+          f" volume_factor: {volume_factor}, "
+          f" rolling_price_lbw: {rolling_price_lbw},"
+          f" SSO_smoothing_factor: {SSO_smoothing_factor}")
 
 
-total_results = pd.DataFrame(columns=['momentum_lbw', 'momentum_th', 'volume_trigger_lbw', 'volume_trigger_duration', 'sharpe', 'sharpe_std'])
-for (momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration) in itertools.product(momentum_lbws, momentum_ths, volume_trigger_lbws, volume_trigger_durations):
-    print(f"momentum_lbw: {momentum_lbw}, momentum_th: {momentum_th}, volume_trigger_lbw: {volume_trigger_lbw}, volume_trigger_duration: {volume_trigger_duration}")
-    (params_sharpe, params_sharpe_std) = run_model(example_tickers, momentum_lbw, momentum_th, volume_trigger_lbw, volume_trigger_duration, 0)
-    print(f"sharpe = {round(params_sharpe, 3)}, std = {round(params_sharpe_std, 3)}")
+def print_results():
+    print(f"avg sharpe = {round(params_sharpe, 3)},"
+          f" std between sharpes = {round(params_sharpe_std, 3)},"
+          f" avg returns = {round(params_returns, 3)}")
+
+
+# def print_results_naive():
+#     print(f"avg sharpe naive = {round(params_sharpe_naive, 3)},"
+#           f" std between sharpes naive = {round(params_sharpe_std_naive, 3)},"
+#           f" avg returns naive = {round(params_returns_naive, 3)}")
+
+
+def store_results():
     results_data = {
         'momentum_lbw': momentum_lbw,
         'momentum_th': momentum_th,
         'volume_trigger_lbw': volume_trigger_lbw,
         'volume_trigger_duration': volume_trigger_duration,
+        'volume_factor': volume_factor,
         'sharpe': params_sharpe,
-        'sharpe_std': params_sharpe_std
+        'sharpe_std': params_sharpe_std,
+        'returns': params_returns,
+        'rolling_price_lbw': rolling_price_lbw,
+        'SSO_smoothing_factor': SSO_smoothing_factor,
+        # 'sharpe_naive': params_sharpe_naive,
+        # 'sharpe_std_naive': params_sharpe_std_naive,
+        # 'returns_naive': params_returns_naive
     }
     results = pd.Series(results_data)
-    total_results.loc[f'{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}'] = results
+    total_results.loc[
+        f'{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}_{volume_factor}_{rolling_price_lbw}_{SSO_smoothing_factor}'] \
+        = results
 
-total_results.to_csv("./optimization_results_0.csv")
+
+total_results = pd.DataFrame(columns=
+                             ['momentum_lbw', 'momentum_th', 'SSO_smoothing_factor',
+                              'volume_trigger_lbw', 'volume_trigger_duration', 'volume_factor',
+                              'sharpe', 'sharpe_std',
+                              'returns', 'rolling_price_lbw'])
+
+
+def run_naive_model(tickers,
+                    momentum_lbw, momentum_th, SSO_smoothing_factor,
+                    transaction_cost=0.01, order_quantity=1):
+    sharpes_naive = []
+    returns_naive = []
+    for ticker in tickers:
+        data = yf.Ticker(ticker).history(period="60d", interval="15m")
+        data = data.reset_index()
+        train, test = train_test_split(data, test_size=0.25, shuffle=False)
+
+        add_model_features(train,
+                           SSO_lbw=momentum_lbw,
+                           SSO_smoothing_factor=SSO_smoothing_factor)
+
+        naive_momentum(train, SSO_boundaries=momentum_th,
+                       transaction_cost=transaction_cost, order_quantity=order_quantity)
+
+        # calc_model(momentum_th, order_quantity, train, transaction_cost)
+
+        sharpe_res_naive = round(calc_sharpe(train, 'naive_momentum_returns'), 3)
+        returns_res_naive = round(train['naive_momentum_returns_accumulate'].dropna().iloc[-1], 3)
+        sharpes_naive.append(sharpe_res_naive)
+        returns_naive.append(returns_res_naive)
+
+        # plot_ticker_results(train, sharpe_res, ticker)
+
+        # train.to_csv(
+        #     f"./results/{ticker}_{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}_{volume_factor}.csv")
+
+    return np.mean(sharpes_naive), np.std(sharpes_naive), np.mean(returns_naive)
+
+
+tickers = data_tools.bio_tickers
+
+
+def train_naive_model(naive_momentum_lbws, naive_momentum_ths, naive_momentum_sso_smoothings):
+    for (lbw, th, SSO_smoothing_factor) \
+            in itertools.product(naive_momentum_lbws, naive_momentum_ths, naive_momentum_sso_smoothings):
+        # print_curr_params()
+        (params_sharpe_naive, params_sharpe_std_naive, params_returns_naive) = \
+            run_model(tickers,
+                      momentum_lbw, momentum_th, SSO_smoothing_factor,
+                      transaction_cost=1, order_quantity=100)
+        # print_results_naive()
+        store_results_naive(params_sharpe_naive, params_sharpe_std_naive, params_returns_naive)
+
+
+def store_results_naive(params_sharpe_naive, params_sharpe_std_naive, params_returns_naive):
+    naive_results_data = {
+        'momentum_lbw': momentum_lbw,
+        'momentum_th': momentum_th,
+        'SSO_smoothing_factor': SSO_smoothing_factor,
+        'sharpe': params_sharpe,
+        'sharpe_std': params_sharpe_std,
+        'returns': params_returns,
+        'sharpe_naive': params_sharpe_naive,
+        'sharpe_std_naive': params_sharpe_std_naive,
+        'returns_naive': params_returns_naive
+    }
+    naive_results = pd.Series(naive_results_data)
+    total_results.loc[
+        f'{momentum_lbw}_{momentum_th}_{volume_trigger_lbw}_{volume_trigger_duration}_{volume_factor}_{rolling_price_lbw}_{SSO_smoothing_factor}'] \
+        = naive_results
+
+
+naive_momentum_lbws = []
+naive_momentum_ths = []
+naive_momentum_sso_smoothings = []
+total_results_naive = pd.DataFrame(columns=
+                             ['momentum_lbw', 'momentum_th', 'SSO_smoothing_factor',
+                              'sharpe', 'sharpe_std', 'returns'])
+# train_naive_model(naive_momentum_lbws, naive_momentum_ths, naive_momentum_sso_smoothings)
+total_results_naive.to_csv("./optimization_naive/results_naive_momentum_1.csv")
+
+# momentum_lbws = range(1, 12, 1)
+# momentum_lbws = [2, 3, 5, 7]
+# momentum_lbws = [1, 2, 3, 4, 5, 7, 10]
+momentum_lbws = [6, 7, 8]
+# momentum_ths = np.arange(0.15, 0.35, 0.05)
+# momentum_ths = [0.15, 0.25, 0.4]
+# momentum_ths = [0.25, 0.3]
+momentum_ths = np.arange(0.22, 0.28, 0.01)
+# volume_trigger_lbws = range(4, 15, 2)
+volume_trigger_lbws = [50]
+# volume_trigger_lbws = [25]
+# volume_trigger_durations = range(3, 50, 5)
+volume_trigger_durations = [5]
+# volume_trigger_durations = [11]
+
+# volume_factors = [1.2, 1.5, 1.7]
+# volume_factors = np.arange(1.5, 4, 0.1)
+volume_factors = np.arange(1.7, 2.11, 0.1)
+# volume_factors = np.arange(1, 1.7, 0.1)
+
+rolling_price_lbws = [10]
+
+# SSO_smoothing_factors = [1, 2, 3, 4, 5]
+SSO_smoothing_factors = [1]
+
+
+def train_model():
+    global momentum_lbw, momentum_th, SSO_smoothing_factor, volume_trigger_lbw, volume_trigger_duration, volume_factor, rolling_price_lbw, params_sharpe, params_sharpe_std, params_returns
+    for (momentum_lbw, momentum_th, SSO_smoothing_factor,
+         volume_trigger_lbw, volume_trigger_duration, volume_factor,
+         rolling_price_lbw) in itertools.product(momentum_lbws, momentum_ths, SSO_smoothing_factors,
+                                                 volume_trigger_lbws, volume_trigger_durations, volume_factors,
+                                                 rolling_price_lbws):
+        print_curr_params()
+        (params_sharpe,  # params_sharpe_naive,
+         params_sharpe_std,  # params_sharpe_std_naive,
+         # params_returns, params_returns_naive) = \
+         params_returns) = \
+            run_model(tickers,
+                      momentum_lbw, momentum_th, SSO_smoothing_factor,
+                      volume_trigger_lbw, volume_trigger_duration, volume_factor, rolling_price_lbw,
+                      transaction_cost=1, order_quantity=100)
+        print_results()
+        # print_results_naive()
+        store_results()
+
+
+train_model()
+total_results.to_csv("./optimization/results_SSO_smoothing_3.csv")
+
 
 
 

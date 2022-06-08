@@ -2,8 +2,8 @@ import pandas as pd
 from pandas_datareader import data
 import yfinance as yf
 
-
 nasdaq_stocks = pd.read_csv("./nasdaq_stocks.csv")
+
 
 def get_sp500_tickers():
     payload = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
@@ -41,7 +41,42 @@ def between_1_10(tickers):
 
 def save_micro_tickers_between_1_10():
     print(nasdaq_stocks.columns)
-    micro_size = nasdaq_stocks['Market Cap'].between(50000000,300000000)
+    micro_size = nasdaq_stocks['Market Cap'].between(50000000, 300000000)
     micro_tickers_between_1_10 = list(nasdaq_stocks[micro_size]['Symbol'].values)
     micro_tickers_between_1_10 = between_1_10(micro_tickers_between_1_10)
     pd.DataFrame(micro_tickers_between_1_10).to_csv("./micro_tickers_between_1_10")
+
+
+bio_tickers = [
+    "PRTK",
+    "CBAY",
+    "LXRX",
+    "OCX",
+    "PRVB",
+    "KMPH",
+    "STRO",
+    "PDSB",
+    "ALDX",
+    "ANNX",
+    "BCAB",
+    'MGNX',
+    "LQDA",
+    "CRDF",
+    "OCUL",
+    "ALT",
+    "ONCT",
+    "GTHX",
+    "MCRB",
+    "ORMP",
+    "LPTX",
+    "SRRK",
+    "CNCE",
+    "CKPT",
+    "VKTX",
+    "VYGR",
+    "IMUX",
+    "RYTM",
+    "DTIL",
+    "SURF",
+    "LCTX",
+    "OMER"]
