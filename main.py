@@ -136,14 +136,17 @@ def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundar
     data.loc[0, 'position'] = 0
     for i in data.index:
         open_position = 0
-        if np.isfinite(data.at[i, 'volume_trigger_holds']) and int(data.at[i, 'volume_trigger_holds']) == 1:
+        if np.isfinite(data.at[i, 'volume_trigger_holds']) \
+                and int(data.at[i, 'volume_trigger_holds']) == 1:
             if data.loc[i, 'close_vs_rolling_price'] >= close_rolling_price_diff_factor:  # close above rolling price
                 j = i
                 high_sso_since_vol_trigger = True
-                while j >= 0 and high_sso_since_vol_trigger and data.loc[j, 'volume_trigger_holds'] == 1 and data.loc[j, 'position'] == 1:
+                while j >= 0 and high_sso_since_vol_trigger \
+                        and data.loc[j, 'volume_trigger_holds'] == 1 \
+                        and data.loc[j, 'position'] == 1:
                     if data.loc[j, 'smooth_SSO'] < 1 - SSO_boundaries:
                         high_sso_since_vol_trigger = False
-                    if int(data.loc[j, 'volume_trigger']) == 1:
+                    if int(data.loc[j, 'volume_trigger']) == 1: # TODO: should remove?
                         break
                     j = j - 1
                 if high_sso_since_vol_trigger:
@@ -151,10 +154,12 @@ def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundar
             else:  # close under rolling price
                 j = i
                 low_sso_since_vol_trigger = True
-                while j >= 0 and low_sso_since_vol_trigger and data.loc[j, 'volume_trigger_holds'] == 1 and data.loc[j, 'position'] == -1:
+                while j >= 0 and low_sso_since_vol_trigger \
+                        and data.loc[j, 'volume_trigger_holds'] == 1 \
+                        and data.loc[j, 'position'] == -1:
                     if data.loc[j, 'smooth_SSO'] > SSO_boundaries:
                         low_sso_since_vol_trigger = False
-                    if int(data.loc[j, 'volume_trigger']) == 1:
+                    if int(data.loc[j, 'volume_trigger']) == 1:  # TODO: should remove?
                         break
                     j = j - 1
                 if low_sso_since_vol_trigger:
@@ -447,6 +452,8 @@ def run_naive_model(tickers,
 
 
 tickers = data_tools.bio_tickers
+
+
 # tickers = ['WIX']
 
 
@@ -484,13 +491,10 @@ naive_momentum_lbws = []
 naive_momentum_ths = []
 naive_momentum_sso_smoothings = []
 total_results_naive = pd.DataFrame(columns=
-                             ['momentum_lbw', 'momentum_th', 'SSO_smoothing_factor',
-                              'sharpe', 'sharpe_std', 'returns'])
+                                   ['momentum_lbw', 'momentum_th', 'SSO_smoothing_factor',
+                                    'sharpe', 'sharpe_std', 'returns'])
 # train_naive_model(naive_momentum_lbws, naive_momentum_ths, naive_momentum_sso_smoothings)
 # total_results_naive.to_csv("./optimization_naive/results_naive_momentum_1.csv")
-
-
-
 
 
 # momentum_lbws = range(1, 12, 1)
@@ -520,8 +524,8 @@ SSO_smoothing_factors = [1]
 
 
 def train_model():
-    global momentum_lbw, momentum_th, SSO_smoothing_factor,\
-        volume_trigger_lbw, volume_trigger_duration, volume_factor,\
+    global momentum_lbw, momentum_th, SSO_smoothing_factor, \
+        volume_trigger_lbw, volume_trigger_duration, volume_factor, \
         rolling_price_lbw, \
         params_sharpe, params_sharpe_std, params_returns
 
@@ -543,11 +547,6 @@ def train_model():
 train_model()
 # total_results.to_csv("./optimization/results_SSO_smoothing_5.csv")
 total_results.to_csv("./results_test/summary.csv")
-
-
-
-
-
 
 # for ticker in list(get_sp500_tickers())[:30]:
 # for ticker in example_tickers:
