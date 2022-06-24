@@ -1,23 +1,14 @@
-import math
-import random
-from datetime import datetime, timedelta
-from typing import Union, Any
-
-import yfinance as yf
-import pandas as pd
-import pandas_ta as ta
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import colors
-from numpy import ndarray
-from pandas import DataFrame
 import itertools
+import math
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from sklearn.model_selection import train_test_split
 
 import data_tools
-from data_tools import get_sp500_tickers
-from finance_tools import pfe, sharpe, sharpe_ratio
-from learning_model import label_data, label_data_with_lfw
-from sklearn.model_selection import train_test_split
+from finance_tools import sharpe_ratio
 
 
 def add_SSO(data, lbw=14, smoothing_factor=3):
@@ -312,7 +303,8 @@ def run_model(tickers,
         sharpes.append(sharpe_res)
         returns.append(returns_res)
 
-        plot_ticker_results(data_to_run, sharpe_res, ticker)
+        # plot_ticker_results(data_to_run, sharpe_res, ticker)
+        plot_ticker_results_2(data_to_run, sharpe_res)
 
         data_to_run['sharpe'] = sharpe_res
         data_to_run['returns'] = returns_res
@@ -363,6 +355,40 @@ def plot_ticker_results(data, sharpe_res, ticker):
     # plt.plot(data['Close'] - data.at[0, 'Close'], label="Stock price",
     #          color='grey', linewidth=0.7, zorder=2)
     # plt.plot(data['returns_accumulate'], label="Model Returns")
+    plt.subplots_adjust(hspace=0.35)
+    # plt.legend(loc='upper left', prop={'size': 10})
+    plt.show()
+
+
+def plot_ticker_results_2(data, ticker):
+    data['color'] = 'None'
+    data.loc[(data['position'] == 1), 'color'] = 'green'
+    data.loc[(data['position'] == -1), 'color'] = 'red'
+
+    fig, axs = plt.subplots(2, figsize=(16, 12))
+    fig.suptitle(f'{ticker} - Model performance')
+    xs = data.index
+    margin = 0.2
+
+    # axs[0].set_ylim((data['volume_power'] / data['volume_power'].max() + data['Close'].min()).min() - margin,
+    #                 max(data['Close']))
+    # axs[0].bar(xs, data['volume_power'] / data['volume_power'].max() + data['Close'].min() - margin,
+    #            color=['c' if x == 1 else 'grey' for x in data['volume_trigger']], zorder=1)
+
+    axs[0].plot(xs, data['Close'], color='black', linewidth=0.5, zorder=1, label='Stock Price')
+
+    axs[0].plot(xs, [data.loc[i, 'Close'] if data.loc[i, 'position'] == 1 else None for i in data.index],
+                color='green', linewidth=0.7, zorder=2, label='Long Trade')
+    axs[0].plot(xs, [data.loc[i, 'Close'] if data.loc[i, 'position'] == -1 else None for i in data.index],
+                color='red', linewidth=0.7, zorder=2, label='Short Trade')
+    axs[0].scatter(xs, data['Close'],
+                   c=data['color'], s=1, zorder=2)
+
+    axs[0].title.set_text("Stock Price & Trades")
+    axs[0].legend(loc='upper right')
+
+    axs[1].plot(xs, data['returns_accumulate'])
+    axs[1].title.set_text("Model Returns")
     plt.subplots_adjust(hspace=0.35)
     # plt.legend(loc='upper left', prop={'size': 10})
     plt.show()
@@ -545,21 +571,4 @@ def train_model():
 
 
 train_model()
-# total_results.to_csv("./optimization/results_SSO_smoothing_5.csv")
 total_results.to_csv("./results_test/summary.csv")
-
-# for ticker in list(get_sp500_tickers())[:30]:
-# for ticker in example_tickers:
-#     data = yf.Ticker(ticker).history(period="60d", interval="15m")
-#     # print(data.columns)
-#     scale_prices(data)
-#     # label_data(data)
-#     label_data_with_lfw(data, 5, 1)
-#     # data.to_csv("./with_labels_3.csv")
-#     # plt.plot(data['Close'], label=f"{ticker} close")
-#     # plt.plot(data['naive_momentum_pl_accumulate'], label="naive momentum accumulated P&L")
-#     # plt.plot(data['scaled_close'], label=f"{ticker} scaled close")
-
-# plt.legend(loc='upper left')
-# plt.show()
-#
