@@ -10,6 +10,18 @@ from sklearn.model_selection import train_test_split
 import data_tools
 from finance_tools import sharpe_ratio
 
+# set train & test data for each ticker
+train = {}
+test = {}
+for ticker in data_tools.tickers:
+    data = yf.Ticker(ticker).history(period="60d", interval="15m",
+                                     actions=False)
+    data = data.reset_index()
+    ticker_train, ticker_test = train_test_split(data, test_size=0.25,
+                                                 shuffle=False)
+    train[ticker] = ticker_train
+    test[ticker] = ticker_test
+
 
 def add_SSO(data, lbw=14, smoothing_factor=3):
     lbw_high = f'lbw_{lbw}_high'
@@ -247,14 +259,13 @@ def calc_enter_position_price(data, order_quantity,
 def run_model(tickers,
               momentum_lbw, momentum_th, SSO_smoothing_factor,
               volume_trigger_lbw, volume_trigger_duration, volume_power, rolling_price_lbw,
-              transaction_cost=0.0035, slippage_rate=0.25, order_quantity=1):
+              transaction_cost=0.0035, slippage_rate=0.25, order_quantity=1, is_test=False, show_plots=False):
     sharpes = []
     returns = []
+    total_returns = pd.DataFrame(columns=sorted([*data_tools.tickers, *list(map(lambda tck: f"{tck}_time", tickers))]))
+
     for ticker in tickers:
-        data = yf.Ticker(ticker).history(period="60d", interval="15m")
-        data = data.reset_index()
-        train, test = train_test_split(data, test_size=0.25, shuffle=False)
-        data_to_run = train
+        data_to_run = test[ticker] if is_test else train[ticker]
         add_model_features(data_to_run,
                            SSO_lbw=momentum_lbw,
                            volume_trigger_lbw=volume_trigger_lbw,
@@ -269,16 +280,21 @@ def run_model(tickers,
         returns_res = round(data_to_run['returns_accumulate'].dropna().iloc[-1], 3)
         sharpes.append(sharpe_res)
         returns.append(returns_res)
+        total_returns[ticker] = data_to_run['returns']
+        total_returns[f"{ticker}_time"] = data_to_run['Datetime']
 
-        plot_ticker_results(data_to_run, ticker, sharpe_res)
+        if show_plots:
+            plot_ticker_results(data_to_run, ticker, sharpe_res)
 
         data_to_run['sharpe'] = sharpe_res
         data_to_run['returns'] = returns_res
-        data_to_run.to_csv(f"./results_test/{ticker}.csv")
+        # data_to_run.to_csv(f"./results_test/{ticker}.csv")
+
+    # total_returns.to_csv("./total_returns.csv")
 
     return np.mean(sharpes), \
            np.std(sharpes), \
-           np.mean(returns)
+           np.mean(returns), \
 
 
 def calc_model(momentum_th, order_quantity, data, transaction_cost, slippage_rate):
@@ -318,7 +334,7 @@ def plot_ticker_results(data, ticker, sharpe):
     axs[0].legend(loc='upper right')
 
     axs[1].plot(xs, data['returns_accumulate'])
-    axs[1].title.set_text(f"Model Returns\nSharpe Ratio - {sharpe}")
+    axs[1].title.set_text(f"Model Returns\nSharpe Ratio: {sharpe}")
     plt.subplots_adjust(hspace=0.35)
     plt.show()
 
@@ -364,7 +380,7 @@ total_results = pd.DataFrame(columns=
                               'sharpe', 'sharpe_std',
                               'returns', 'rolling_price_lbw'])
 
-tickers = data_tools.bio_tickers
+tickers = data_tools.tickers
 
 # momentum_lbws = range(1, 12, 1)
 # momentum_lbws = [2, 3, 5, 7]
@@ -408,7 +424,8 @@ def train_model():
             run_model(tickers,
                       momentum_lbw, momentum_th, SSO_smoothing_factor,
                       volume_trigger_lbw, volume_trigger_duration, volume_power, rolling_price_lbw,
-                      transaction_cost=0.0035, order_quantity=1)
+                      transaction_cost=0.0035, order_quantity=1,
+                      is_test=False, show_plots=False)
         print_results()
         store_results()
 
