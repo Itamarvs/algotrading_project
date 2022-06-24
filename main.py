@@ -303,8 +303,7 @@ def run_model(tickers,
         sharpes.append(sharpe_res)
         returns.append(returns_res)
 
-        # plot_ticker_results(data_to_run, sharpe_res, ticker)
-        plot_ticker_results_2(data_to_run, sharpe_res)
+        plot_ticker_results(data_to_run, sharpe_res)
 
         data_to_run['sharpe'] = sharpe_res
         data_to_run['returns'] = returns_res
@@ -324,43 +323,7 @@ def calc_model(momentum_th, order_quantity, data, transaction_cost):
     calc_pl_returns(data, transaction_cost=transaction_cost, order_quantity=order_quantity)
 
 
-def plot_ticker_results(data, sharpe_res, ticker):
-    # plt.plot(data['pl_accumulate'], label=f"model P&L, sharpe = {sharpe_res}")
-    # plt.plot(data['naive_momentum_pl_accumulate'], label="naive momentum accumulated P&L")
-    data['color'] = 'None'
-    data.loc[(data['position'] == 1), 'color'] = 'green'
-    data.loc[(data['position'] == -1), 'color'] = 'red'
-
-    fig, axs = plt.subplots(2)
-    fig.supylabel(f'{ticker} - Model performance')
-    # xs = range(data.shape[0])
-    # xs = data.Datetime.values
-    xs = data.index
-
-    axs[0].plot(xs, data['Close'], color='black', linewidth=0.7, zorder=2)
-    axs[0].scatter(xs, data['Close'],
-                   c=data['color'], s=1, zorder=1,
-                   label="Stock price")
-    axs[0].title.set_text("Stock Price & Trades")
-    # axs[0].set_ylabel("Trades")
-    axs[1].plot(xs, data['returns_accumulate'], label="Model")
-    # axs[1].plot(xs, data['naive_momentum_returns_accumulate'], label="Naive Momentum")
-    axs[1].title.set_text("Returns")
-    axs[1].legend()
-    # axs[1].set_ylabel("Returns")
-    # plt.scatter(xs, data['Close'] - data.at[0, 'Close'],
-    #             c=data['color'], s=1, zorder=1,
-    #             label="Stock price")
-    # plt.plot(data['Close'], label="Stock price")
-    # plt.plot(data['Close'] - data.at[0, 'Close'], label="Stock price",
-    #          color='grey', linewidth=0.7, zorder=2)
-    # plt.plot(data['returns_accumulate'], label="Model Returns")
-    plt.subplots_adjust(hspace=0.35)
-    # plt.legend(loc='upper left', prop={'size': 10})
-    plt.show()
-
-
-def plot_ticker_results_2(data, ticker):
+def plot_ticker_results(data, ticker):
     data['color'] = 'None'
     data.loc[(data['position'] == 1), 'color'] = 'green'
     data.loc[(data['position'] == -1), 'color'] = 'red'
@@ -370,10 +333,10 @@ def plot_ticker_results_2(data, ticker):
     xs = data.index
     margin = 0.2
 
-    # axs[0].set_ylim((data['volume_power'] / data['volume_power'].max() + data['Close'].min()).min() - margin,
-    #                 max(data['Close']))
-    # axs[0].bar(xs, data['volume_power'] / data['volume_power'].max() + data['Close'].min() - margin,
-    #            color=['c' if x == 1 else 'grey' for x in data['volume_trigger']], zorder=1)
+    axs[0].set_ylim((data['volume_vs_lbw_volume_mean'] / data['volume_vs_lbw_volume_mean'].max() + data['Close'].min()).min() - margin,
+                    max(data['Close']))
+    axs[0].bar(xs, data['volume_vs_lbw_volume_mean'] / data['volume_vs_lbw_volume_mean'].max() + data['Close'].min() - margin,
+               color=['c' if x == 1 else 'lightgrey' for x in data['volume_trigger']], zorder=1)
 
     axs[0].plot(xs, data['Close'], color='black', linewidth=0.5, zorder=1, label='Stock Price')
 
@@ -390,7 +353,6 @@ def plot_ticker_results_2(data, ticker):
     axs[1].plot(xs, data['returns_accumulate'])
     axs[1].title.set_text("Model Returns")
     plt.subplots_adjust(hspace=0.35)
-    # plt.legend(loc='upper left', prop={'size': 10})
     plt.show()
 
 
@@ -408,12 +370,6 @@ def print_results():
     print(f"avg sharpe = {round(params_sharpe, 3)},"
           f" std between sharpes = {round(params_sharpe_std, 3)},"
           f" avg returns = {round(params_returns, 3)}")
-
-
-# def print_results_naive():
-#     print(f"avg sharpe naive = {round(params_sharpe_naive, 3)},"
-#           f" std between sharpes naive = {round(params_sharpe_std_naive, 3)},"
-#           f" avg returns naive = {round(params_returns_naive, 3)}")
 
 
 def store_results():
