@@ -111,7 +111,7 @@ def calc_open_positions_SSO(data, close_rolling_price_diff_factor=1, SSO_boundar
                         and data.loc[j, 'position'] == 1:
                     if data.loc[j, 'smooth_SSO'] < 1 - SSO_boundaries:
                         high_sso_since_vol_trigger = False
-                    if int(data.loc[j, 'volume_trigger']) == 1: # TODO: should remove?
+                    if int(data.loc[j, 'volume_trigger']) == 1:  # TODO: should remove?
                         break
                     j = j - 1
                 if high_sso_since_vol_trigger:
@@ -177,42 +177,49 @@ def calc_positions(data, SSO_boundaries=0.2):
             data.loc[i, 'position'] = position
 
 
-def calc_pl_returns(data, transaction_cost=0.005, order_quantity=1,
-                    prev_position_column='prev_position', position_column='position',
-                    pl='pl', pl_acc='pl_accumulate',
-                    returns='returns', returns_acc='returns_accumulate',
-                    enter_position_price='enter_position_price'):
-    data[prev_position_column] = data[position_column].shift()
+def calc_pl_returns(data, transaction_cost=0.0035, order_quantity=1):
+    data['prev_position'] = data['position'].shift()
     data['prev_close'] = data['Close'].shift()
-    data[pl] = data.apply(lambda row:
-                          calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, position_column),
-                          axis=1)
-    data[pl_acc] = data[pl].cumsum()
-    data.loc[data[enter_position_price] == 0, returns] = 0
-    data.loc[data[enter_position_price] != 0, returns] = data[pl] / data[enter_position_price]
-    data[returns_acc] = data[returns].dropna().cumsum()
+    data['pl'] = data.apply(lambda row:
+                            row_pl(row, transaction_cost, order_quantity),
+                            axis=1)
+    data['pl_accumulate'] = data['pl'].cumsum()
+    data.loc[data['enter_position_price'] == 0, 'returns'] = 0
+    data.loc[data['enter_position_price'] != 0, 'returns'] = data['pl'] / data['enter_position_price']
+    data['returns_accumulate'] = data['returns'].dropna().cumsum()
 
 
-def calc_row_pl(row, transaction_cost, order_quantity, prev_position_column, position_column):
+def row_pl(row, transaction_cost, order_quantity, slippage_rate, is_absolute_transaction_cost=False):
     if math.isnan(row.prev_close) or math.isnan(row.Close):
         return 0
-    elif abs(row[position_column]) == 1 and row[prev_position_column] == 0:
-        return (row.Close - row.Open) * order_quantity * row[position_column] - abs(transaction_cost)
-    elif row[position_column] == 0 and abs(row[prev_position_column]) == 1:
-        return (row.Open - row.prev_close) * order_quantity * row[prev_position_column] - abs(transaction_cost)
-    elif abs(row[position_column]) == 1 and abs(row[prev_position_column]) == 1 and np.sign(
-            row[position_column]) != np.sign(row[prev_position_column]):
-        return (row.Close - row.Open) * order_quantity * row[position_column] - abs(transaction_cost) \
-               + (row.Open - row.prev_close) * order_quantity * row[prev_position_column] - abs(transaction_cost)
+
+    pl_enter_position = \
+        (row['Close'] - row['Open']) * order_quantity * row['position']
+    pl_exit_position = \
+        (row['Open'] - row["prev_close"]) * order_quantity * row["prev_position"]
+    pl_keep_in_position = \
+        (row['Close'] - row["prev_close"]) * order_quantity * row['position']
+
+    if is_absolute_transaction_cost:
+        commission_cost = transaction_cost
     else:
-        return (row.Close - row.prev_close) * order_quantity * row[position_column]
+        commission_cost = transaction_cost * order_quantity * row['Open']
+
+    slippage = slippage_rate * abs(row['Close'] - row['Open'])
+
+    if abs(row['position']) == 1 and row.prev_position == 0:
+        return pl_enter_position - commission_cost - slippage
+    elif row['position'] == 0 and abs(row.prev_position) == 1:
+        return pl_exit_position - commission_cost - slippage
+    elif abs(row['position']) == 1 and abs(row.prev_position) == 1 and \
+            np.sign(row['position']) != np.sign(row.prev_position):
+        return pl_enter_position + pl_exit_position - 2 * commission_cost - slippage
+    else:
+        return pl_keep_in_position
 
 
 def calc_sharpe(data, returns='returns'):
-    # sharpe_res = sharpe(data['pl_accumulate'])
-    # sharpe_res = sharpe(data['returns'])
     sharpe_res = sharpe_ratio(data[returns].dropna())
-    # print("sharpe ratio: ", sharpe_res)
     return sharpe_res
 
 
@@ -307,9 +314,11 @@ def plot_ticker_results(data, ticker):
     xs = data.index
     margin = 0.2
 
-    axs[0].set_ylim((data['volume_vs_lbw_volume_mean'] / data['volume_vs_lbw_volume_mean'].max() + data['Close'].min()).min() - margin,
+    axs[0].set_ylim((data['volume_vs_lbw_volume_mean'] / data['volume_vs_lbw_volume_mean'].max() + data[
+        'Close'].min()).min() - margin,
                     max(data['Close']))
-    axs[0].bar(xs, data['volume_vs_lbw_volume_mean'] / data['volume_vs_lbw_volume_mean'].max() + data['Close'].min() - margin,
+    axs[0].bar(xs, data['volume_vs_lbw_volume_mean'] / data['volume_vs_lbw_volume_mean'].max() + data[
+        'Close'].min() - margin,
                color=['c' if x == 1 else 'lightgrey' for x in data['volume_trigger']], zorder=1)
 
     axs[0].plot(xs, data['Close'], color='black', linewidth=0.5, zorder=1, label='Stock Price')
@@ -371,10 +380,7 @@ total_results = pd.DataFrame(columns=
                               'sharpe', 'sharpe_std',
                               'returns', 'rolling_price_lbw'])
 
-
-
 tickers = data_tools.bio_tickers
-
 
 # momentum_lbws = range(1, 12, 1)
 # momentum_lbws = [2, 3, 5, 7]
@@ -418,7 +424,7 @@ def train_model():
             run_model(tickers,
                       momentum_lbw, momentum_th, SSO_smoothing_factor,
                       volume_trigger_lbw, volume_trigger_duration, volume_factor, rolling_price_lbw,
-                      transaction_cost=1, order_quantity=100)
+                      transaction_cost=0.0035, order_quantity=1)
         print_results()
         store_results()
 
