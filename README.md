@@ -1,1 +1,1 @@
-# algotrading_project
+# Algotrading Project
