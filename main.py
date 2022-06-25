@@ -1,5 +1,6 @@
 import itertools
 import math
+import random
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -288,7 +289,6 @@ def run_model(tickers,
 
         data_to_run['sharpe'] = sharpe_res
         data_to_run['returns'] = returns_res
-        # data_to_run.to_csv(f"./results_test/{ticker}.csv")
 
     # total_returns.to_csv("./total_returns.csv")
 
@@ -382,31 +382,13 @@ total_results = pd.DataFrame(columns=
 
 tickers = data_tools.tickers
 
-# momentum_lbws = range(1, 12, 1)
-# momentum_lbws = [2, 3, 5, 7]
-# momentum_lbws = [1, 2, 3, 4, 5, 7, 10]
-momentum_lbws = [8]
-# momentum_ths = np.arange(0.15, 0.35, 0.05)
-# momentum_ths = [0.15, 0.25, 0.4]
-momentum_ths = [0.25]
-# momentum_ths = np.arange(0.24, 0.28, 0.01)
-# volume_trigger_lbws = range(4, 15, 2)
+momentum_lbws = range(1, 20, 2)
+momentum_ths = np.arange(0.05, 0.45, 0.07)
 volume_trigger_lbws = [50]
-# volume_trigger_lbws = [25]
-# volume_trigger_durations = range(3, 50, 5)
-volume_trigger_durations = [5]
-# volume_trigger_durations = [11]
-
-# volume_powers = [1.2, 1.5, 1.7]
-# volume_powers = np.arange(1.5, 4, 0.1)
-# volume_powers = np.arange(1.3, 2, 0.1)
-volume_powers = [1.6]
-
+volume_trigger_durations = range(1, 31, 8)
+volume_powers = [1, 2, 3, 4, 5]
 rolling_price_lbws = [10]
-
-# SSO_smoothing_factors = [1, 2, 3, 4, 5]
-SSO_smoothing_factors = [1]
-
+SSO_smoothing_factors = [1, 2, 3, 4]
 
 def train_model():
     global momentum_lbw, momentum_th, SSO_smoothing_factor, \
@@ -428,7 +410,7 @@ def train_model():
                       is_test=False, show_plots=False)
         print_results()
         store_results()
-
+        if random.randint(1, 30) == 2:
+            total_results.to_csv("./results_test/summary.csv")
 
 train_model()
-total_results.to_csv("./results_test/summary.csv")
